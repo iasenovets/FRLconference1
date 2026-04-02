@@ -125,3 +125,46 @@ So a high-trust agent still gets less noise injected, exactly as in original DAP
 **The key enhancement in plain terms**
 
 The original DAPI assumes you trust the aggregator not to misuse what it sees — it can read every gradient, just noisier ones from lower-trust agents. CipherFRL removes that assumption entirely. The aggregator becomes a blind calculator: it knows the trust weights, it knows how many agents contributed, but it cannot read a single gradient whether that agent was trusted or not.
+
+
+
+- read the readme.md and cipherFRL_idea.md, and explain whether we're doing the same thing twice in privacy-preserving mechanisms? I suppose that homomorphic encryption can allow for secure aggregation, so that we don't need to overcomplicate it with another library as shown in improvement 2 and improvement 3
+
+Partly yes, but not completely.
+
+Your intuition is basically right: if we adopt homomorphic encryption for encrypted aggregation, then “Improvement 2” and “Improvement 3” overlap in purpose. They are both trying to stop the aggregator from seeing individual client updates. So if the goal is a clean, practical architecture, we probably should not present both as equally necessary first-line additions.
+
+The clean distinction is:
+
+- Differential Privacy protects against information leakage from the update itself, even if someone eventually sees it or learns from repeated outputs.
+- Homomorphic Encryption protects confidentiality during transport and aggregation, so the server cannot read individual updates.
+- Secure Aggregation protects confidentiality of individual updates by revealing only the aggregate, usually through masking/secret-sharing rather than HE.
+- SMPC is broader: it enables multi-party computation of functions on private data, and secure aggregation is one specific thing it can implement.
+
+So HE and SecAgg are not identical, but for your use case they are alternative ways to achieve the same main systems goal: “server should not see individual plaintext updates.”
+
+For this repo and paper direction, I’d simplify it like this:
+
+- Keep `DP + DAPI` as one mechanism family.
+- Choose either `HE` or `SecAgg` as the aggregation confidentiality mechanism.
+- Do not position both as required unless you explicitly want a comparative design section.
+
+Given your `cipherFRL_idea.md`, HE is the more natural choice because the proposed CipherFRL chain is already:
+
+`higher trust -> higher epsilon -> less noise -> encrypt noisy gradient -> aggregate on ciphertext -> decrypt aggregate`
+
+That already gives you the “secure aggregation without plaintext visibility” story. In that framing, a separate masking-based SecAgg library would be extra complexity unless you want:
+- a baseline comparison,
+- a lighter non-HE deployment option,
+- or a section showing alternative implementations.
+
+So I would revise the README logic to something like:
+
+- Improvement 2: encrypted aggregation with CKKS, which serves the secure aggregation role in this design
+- Improvement 3: optional alternative secure aggregation path without HE, if lower cryptographic overhead is desired
+
+That would avoid sounding like you need both `TenSEAL` and an additional SecAgg library in the same pipeline.
+
+Short version: yes, your current roadmap is somewhat double-counting aggregation privacy. HE can serve the secure aggregation function here, so you likely only need one of those as the main implementation path.
+
+If you want, I can rewrite the “Recommended Improvements” section in [README.md](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/README.md) to remove that redundancy and make the architecture cleaner.
