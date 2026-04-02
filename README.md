@@ -87,26 +87,26 @@ The power-law form is recommended: it provides finer discrimination at low trust
 
 This is the area of greatest divergence between the paper and the code.
 
-#### 3a. Differential Privacy (DP)
+#### 2a. Differential Privacy (DP)
 
 | Paper claim                                                                                                        | Implementation status                                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | DP noise injected into local gradients before transmission; privacy budget ε calibrated via ε = Δf / (α·λ) (Eq. 1) | ❌ **Not implemented** in the primary codebase (`FL_train.py`). No Gaussian or Laplace mechanism, no gradient clipping for DP, no privacy budget tracking.                                                                                                                                                                                                                                                  |
 | DP noise via DAPI (ε_i = β·T_i^γ) (Fig. 4 formula and DAPI_graph.py)                                               | ⚠️ **Partially implemented** — `frl_workflow_blueprint1.py` applies Gaussian noise scaled to 1/ε after trust-score-derived ε (`DAPIController.add_dp_noise_to_weights`). The formula used is the linear form ε_i = β·T_i + γ (Eq. 5 in the paper), **not** the power-law ε = β·T^γ used in `DAPI_graph.py`. These two formulations are inconsistent with each other. The primary codebase has no DP at all. |
 
-#### 3b. Homomorphic Encryption (HE / Paillier)
+#### 2b. Homomorphic Encryption (HE / Paillier)
 
 | Paper claim                                                                                               | Implementation status                                                                                                         |
 | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Paillier cryptosystem used for lightweight encryption of gradients; secure aggregation without decryption | ❌ **Not implemented anywhere** in the codebase. No HE library is imported or invoked. This is a conceptual description only. |
 
-#### 3c. Secure Aggregation (SecAgg)
+#### 2c. Secure Aggregation (SecAgg)
 
 | Paper claim                                                                      | Implementation status                                                                                                                                                |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Secure aggregation protocol to protect updates during transmission to the server | ❌ **Not implemented anywhere** in the codebase. Aggregation in both codebases is performed in plaintext (mean / trimmed-mean / multi-krum over clear-text tensors). |
 
-#### 3d. Secure Multi-Party Computation (SMPC)
+#### 2d. Secure Multi-Party Computation (SMPC)
 
 | Paper claim                                                                               | Implementation status                                                                             |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
