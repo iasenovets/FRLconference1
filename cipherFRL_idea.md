@@ -1,5 +1,4 @@
-- What are the main components / workflow stages of this FRL framework's concept? What is DAPI in the context of the system? 
-(im asking about the springer pdf i sent earlier, not the new main.tex)
+#### - What are the main components / workflow stages of this FRL framework's concept? What is DAPI in the context of the system? (im asking about the springer pdf i sent earlier, not the new main.tex)
 
 
 Looking at the Springer PDF content already in context — no need to re-read files.
@@ -67,7 +66,7 @@ anomaly detection scores.
 The DAPI graph script (`DAPI_graph.py`) plots a power-law version εᵢ = β · Tᵢ^γ rather than the linear formula in the text, which is an internal inconsistency flagged in the audit — but the conceptual intent is the same: a monotonically increasing relationship between trust and permitted privacy budget.
 
 
-- how does your proposed paper (main.tex) draft enhances current DAPI? Does it put CKKS somewhere in the chain (higher trust score → higher ε → less noise injected →) of the second framework component? Or does it encrypt gradients with calibrated noise before transmission and then allows for secure aggregation? Show the suggested workflow in the same chain style (simple terms)
+#### - how does your proposed paper (main.tex) draft enhances current DAPI? Does it put CKKS somewhere in the chain (higher trust score → higher ε → less noise injected →) of the second framework component? Or does it encrypt gradients with calibrated noise before transmission and then allows for secure aggregation? Show the suggested workflow in the same chain style (simple terms)
 
 Looking at what the draft actually proposes versus what DAPI does:
 
@@ -126,9 +125,7 @@ So a high-trust agent still gets less noise injected, exactly as in original DAP
 
 The original DAPI assumes you trust the aggregator not to misuse what it sees — it can read every gradient, just noisier ones from lower-trust agents. CipherFRL removes that assumption entirely. The aggregator becomes a blind calculator: it knows the trust weights, it knows how many agents contributed, but it cannot read a single gradient whether that agent was trusted or not.
 
-
-
-- read the readme.md and cipherFRL_idea.md, and explain whether we're doing the same thing twice in privacy-preserving mechanisms? I suppose that homomorphic encryption can allow for secure aggregation, so that we don't need to overcomplicate it with another library as shown in improvement 2 and improvement 3
+#### - read the readme.md and cipherFRL_idea.md, and explain whether we're doing the same thing twice in privacy-preserving mechanisms? I suppose that homomorphic encryption can allow for secure aggregation, so that we don't need to overcomplicate it with another library as shown in improvement 2 and improvement 3
 
 Partly yes, but not completely.
 
@@ -168,3 +165,97 @@ That would avoid sounding like you need both `TenSEAL` and an additional SecAgg 
 Short version: yes, your current roadmap is somewhat double-counting aggregation privacy. HE can serve the secure aggregation function here, so you likely only need one of those as the main implementation path.
 
 If you want, I can rewrite the “Recommended Improvements” section in [README.md](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/README.md) to remove that redundancy and make the architecture cleaner.
+
+
+#### - What is the gradient data, how does it look like (floating points?), what is it used for, how is it produced (by agents?) according to the code source files? Evaluate whether we'll run into some decryption problem due to the noise growth after he aggregation (what he operations are required in aggregation: ct-pt mult, ot ct-ct mult, or/and ct-ct add?) since we add DP noise to the gradient and then also encrypt it homomorphically. Does TenSeal's library CKKS API support some RLWE-RGSW ExternalProduct algorithm that can optimise noise-growth?
+
+
+Short answer: in the current code, the “gradient” story is mixed.
+
+The primary FL code really does aggregate flat floating-point model updates, but the RL blueprint does not send raw gradients. It sends full model weights after local DQN training, then adds Gaussian DP noise to those weights, and aggregates the noisy weight tensors. So if we implement CipherFRL against the RL blueprint as it exists today, we would actually be encrypting noisy `state_dict` weights or weight deltas, not literal per-step gradients.
+
+**What the data is in this repo**
+
+In the primary FL path, each client trains locally, flattens every parameter tensor into one long `torch.cuda.FloatTensor`, and sends an update vector
+`update = params - model_received`.
+That is a 1-D floating-point vector of length `P`, where `P` is the total parameter count.
+See [FL_train.py](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/code/FL_train.py#L129) and [FL_train.py](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/code/FL_train.py#L157).
+
+In the RL blueprint, local agents train a DQN with backprop, but the exported object is the model `state_dict`:
+[get_weights](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/code/frl_workflow_blueprint1.py#L296).
+Then DAPI adds Gaussian noise to each tensor in that weight dict:
+[add_dp_noise_to_weights](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/code/frl_workflow_blueprint1.py#L338).
+Then the aggregator does a weighted average of those tensors:
+[fedavg](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/code/frl_workflow_blueprint1.py#L368) and [run loop](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/code/frl_workflow_blueprint1.py#L499).
+
+So there is an implementation mismatch with the draft paper, which currently talks about a gradient vector `g_i in R^P` and encrypted gradient aggregation in [main.tex](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/article/main.tex#L251).
+
+**What aggregation operations are actually needed**
+
+For the protocol as written in the draft, the server only needs:
+- ciphertext-plaintext scalar multiply: `ct * w_i`
+- ciphertext-ciphertext add: sum across clients
+
+That’s exactly what the algorithm says in [main.tex](/mnt/c/Users/hp/Desktop/sync/development/codex_projects/masters/2_articles/AI_PIR/2_frl_fhe/FRLconference1_clean/article/main.tex#L366), and the TenSEAL API exposes `add`, `mul`, and `mul_plain` on `CKKSVector` in the binding layer.
+Sources:
+- TenSEAL repo feature list: https://github.com/OpenMined/TenSEAL
+- TenSEAL binding exposing `add`, `mul`, `mul_plain`: https://github.com/OpenMined/TenSEAL/blob/main/tenseal/binding.cpp
+
+For your aggregation design, you do not need ciphertext-ciphertext multiplication.
+
+That matters a lot: no `ct-ct mul` means multiplicative depth stays very low. So the HE noise-growth risk is much smaller than in deep CKKS pipelines.
+
+**Will DP noise plus HE cause decryption trouble?**
+
+Probably not in the aggregation phase itself, if you keep the design to `ct-pt mult + ct-ct add`.
+
+The key distinction is:
+- DP noise is plaintext data noise added to the update values before encryption.
+- HE noise is cryptographic noise inside the CKKS ciphertext.
+
+Adding DP Gaussian noise before encryption does not itself consume CKKS levels. It just changes the plaintext values being encoded. So it can hurt utility or increase value range, but it is not the same thing as HE noise growth.
+
+The main HE risk here is not “DP noise plus HE breaks decryption”; it is:
+- value scale management,
+- approximation error,
+- and repeated multiplications.
+
+Since your server-side aggregation only does one scalar multiplication per client chunk and then additions, this is a shallow circuit. That is a good fit for CKKS.
+
+So my assessment is:
+- `ct-pt mult`: yes
+- `ct-ct add`: yes
+- `ct-ct mult`: not needed for weighted FedAvg
+- decryption failure from HE noise growth: unlikely if parameters are chosen sanely
+- bigger practical concern: packing size, ciphertext count, and keeping encoded magnitudes/scales stable
+
+**About RLWE-RGSW ExternalProduct**
+
+I do not see evidence that TenSEAL exposes an RGSW ExternalProduct-style API.
+
+What I found:
+- TenSEAL publicly advertises CKKS/BFV encrypted vectors, elementwise encrypted-encrypted and encrypted-plain ops, dot product, and matrix multiplication.
+- Its Python bindings expose `add`, `add_plain`, `mul`, `mul_plain`, `dot`, `matmul`, etc.
+- I found no `RGSW`, `ExternalProduct`, or similar binding in the TenSEAL binding source.
+
+Sources:
+- https://github.com/OpenMined/TenSEAL
+- https://github.com/OpenMined/TenSEAL/blob/main/tenseal/binding.cpp
+
+So my best inference is: no, not through the standard TenSEAL CKKS API. If you wanted RLWE×RGSW ExternalProduct to optimize noise growth, that would likely require custom lower-level work beyond normal TenSEAL usage.
+
+**Bottom line**
+
+For this project, the clean design is:
+- decide whether the encrypted object is weight deltas or full weights
+- keep aggregation to `ct-pt multiply + ct-ct add`
+- avoid `ct-ct multiply`
+- treat DP noise as a modeling/privacy choice, not as HE noise-budget consumption
+- do not assume TenSEAL gives you RGSW ExternalProduct optimization out of the box
+
+One important correction: if we stay faithful to the current RL blueprint code, the draft should stop saying “gradient” everywhere and instead say “model weights” or “model updates/deltas,” unless we first refactor the code to export true gradients.
+
+If you want, I can next do one of these:
+1. audit `article/main.tex` and mark every place where “gradient” should become “weights/update”
+2. sketch exact CKKS parameter choices for this shallow `ct-pt mult + ct-ct add` pipeline
+3. propose how to switch the blueprint from noisy weights to noisy weight deltas so it matches FedAvg more cleanly
